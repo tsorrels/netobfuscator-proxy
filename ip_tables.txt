@@ -1,0 +1,1 @@
+sudo iptables -A OUTPUT -p tcp --tcp-flags RST,ACK RST -j DROP
