@@ -17,50 +17,20 @@ SHUTDOWN = False
 
 
 def build_new_packet(packet_orig:bytearray, src_addr:str, dst_addr:str, ttl = 0):
-
-    #test_packet_bytes = b"\x45\x00\x00\x3c\x86\x31\x40\x00\x40\x06\xc2\x6e\xc0\xa8\x38\x65\xc0\xa8\x38\x66\xb0\xf2\x30\x39\x7b\x5b\x25\xc4\x00\x00\x00\x00\xa0\x02\xfa\xf0\xf2\x4a\x00\x00\x02\x04\x05\xb4\x04\x02\x08\x0a\x38\x18\x40\xbb\x00\x00\x00\x00\x01\x03\x03\x07"
-
-    #test_scapy_packet = IP(test_packet_bytes)
-
-
     scapy_packet = IP(packet_orig)
-
-    # new_packet = ""
-
-    #scapy_packet.show2()
-
-    #del(scapy_packet.len)
     del(scapy_packet.chksum)
     del(scapy_packet[TCP].chksum)
-    #del(scapy_packet[TCP].dataofs)
     
     if ttl:
         del(scapy_packet.ttl)
 
-
-    #scapy_packet[TCP].options = ''
     scapy_packet.src = src_addr
     scapy_packet.dst = dst_addr
     
     if ttl:
         scapy_packet.ttl = ttl
 
-
-    #scapy_packet = IP()/TCP(dport=12345)
-    # scapy_packet.sport = scapy_packet_orig.sport
-    # scapy_packet.dport = scapy_packet_orig.dport
-
-
-    # new_packet = IP(dst='192.168.56.102')/TCP()
-
-    # new_packet.dst = '192.168.56.102'
-    # new_packet.src = '192.168.56.102'
-    # new_packet.sport = 12345     
-    # new_packet.dport = 54321
-
     scapy_packet.show2()
-
-    #send(new_packet)
 
     return raw(scapy_packet)
 
@@ -86,8 +56,6 @@ def ip_checksum(ip_header, size):
     cksum += (cksum >>16)
     
     return (~cksum) & 0xFFFF
-
-
 
 
 # returns a new byte array and does not modify original
@@ -187,44 +155,7 @@ def run_udp_to_tcp_target_raw(listen_udp_socket: socket.socket, send_tcp_raw_soc
                 raw_packet_bytes[:] = raw_buffer
                 ip_header = IPHeader(raw_buffer[0:20])
                 
-
-
-                # raw_buffer_copy_ip_header = raw_buffer_copy[0:20]
-
-                # byte index 10 and 11 are the checksum
-
-                # raw_buffer_copy_ip_header[10] = 0
-                # raw_buffer_copy_ip_header[11] = 0
-
-                # raw_buffer_copy_ip_header_checksum = ip_checksum(raw_buffer_copy_ip_header, 20)
-                # print (f"################ raw_buffer_copy_ip_header_checksum = {raw_buffer_copy_ip_header_checksum}")
-                # print (f"################ raw_buffer_copy_ip_header_checksum = {socket.htons(raw_buffer_copy_ip_header_checksum)}")
-
-
                 print (f"Proxy-raw: {ip_header.protocol} {ip_header.src_address} -> {ip_header.dst_address} {ip_header.length} {ip_header.total_length} {ip_header.offset} {ip_header.checksum}")                
-
-                # check original ip checksum
-                # foobar_header =build_ip_header(ip_header.src_address, ip_header.dst_address, ip_header, 0)
-                # print (f"calculated checksum is {ip_checksum(foobar_header, len(foobar_header))}")
-                # print (f"calculated checksum is {socket.htons(ip_checksum(foobar_header, len(foobar_header)))}")
-
-
-                ip_data = raw_buffer[20:len(raw_buffer)]
-
-                #ip_header.print()
-
-                #new_ip_header_no_checksum = build_ip_header(listener_ip, target_ip, ip_header, 0)
-
-                #header_checksum = ip_checksum(new_ip_header_no_checksum, len(new_ip_header_no_checksum))
-
-                #new_ip_header_with_checksum = build_ip_header(listener_ip, target_ip, ip_header, header_checksum)
-
-                new_ip_header = replace_ip_addresses(raw_buffer[0:20], listener_ip, target_ip)
-
-                # print (f"sending data to raw socket with target ip {target_ip} with listener {listener_ip} and new ip header = {new_ip_header}")
-                # packet = new_ip_header + ip_data
-
-                # packet = b"\x45\x00\x00\x3c\x86\x31\x40\x00\x40\x06\xc2\x6e\xc0\xa8\x38\x65\xc0\xa8\x38\x66\xb0\xf2\x30\x39\x7b\x5b\x25\xc4\x00\x00\x00\x00\xa0\x02\xfa\xf0\xf2\x4a\x00\x00\x02\x04\x05\xb4\x04\x02\x08\x0a\x38\x18\x40\xbb\x00\x00\x00\x00\x01\x03\x03\x07"
 
                 new_packet = build_new_packet(raw_packet_bytes, listener_ip, target_ip)
 
@@ -233,10 +164,7 @@ def run_udp_to_tcp_target_raw(listen_udp_socket: socket.socket, send_tcp_raw_soc
                 print (f"Proxy-raw: {temp_ip_header.protocol} {temp_ip_header.src_address} -> {temp_ip_header.dst_address} {temp_ip_header.length} {temp_ip_header.total_length}")
                 print (f"Proxy-raw: {len(new_packet)}")
 
-
                 send_tcp_raw_socket.sendto(new_packet,(target_ip, 0))
-
-                #send(new_packet)
 
             if (SHUTDOWN):
                 print ("shutting down run_udp_listen_to_client_tcp_raw")
@@ -260,15 +188,10 @@ def run_tcp_raw_to_udp_gateway(listen_tcp_raw_socket: socket.socket, udp_gateway
             ready_read = ready[0]
             if listen_tcp_raw_socket in ready_read:        
                 raw_buffer, addr = listen_tcp_raw_socket.recvfrom(65565)
-                ip_header = IPHeader(raw_buffer[0:20])
-                # print (f"Proxy-listener-client: {ip_header.protocol} {ip_header.src_address} -> {ip_header.dst_address}")
-
+                
                 # write MSS of 1460 to raw tcp packet
                 raw_bytes = bytearray(len(raw_buffer))
                 raw_bytes[:] = raw_buffer
-                # tcp_header[:] = raw_buffer[20:40]
-                # raw_bytes[20+22] = 5
-                # raw_bytes[20+23] = 180 
 
                 scapy_packet = IP(raw_bytes)
                 scapy_packet.show2()
@@ -310,11 +233,8 @@ def run_udp_listen_to_udp_send(udp_listen_socket: socket.socket, exit_nodes):
             ready_read = ready[0]
             if udp_listen_socket in ready_read:   
                 raw_buffer, recv_addr = udp_listen_socket.recvfrom(65565)
-
                 node = choose_node(exit_nodes)
-
                 print (f"UDP: received {len(raw_buffer)} from {str(recv_addr)}, writing to {str(node.ip)}:{str(node.port)}")
-
                 node.socket.sendto(raw_buffer, (node.ip, node.port))
 
             if SHUTDOWN:
@@ -341,15 +261,7 @@ def run_udp_listen_to_client_tcp_raw(udp_listen_socket: socket.socket, send_tcp_
                 raw_packet_bytes[:] = raw_buffer
 
                 ip_header = IPHeader(raw_buffer[0:20])
-                # ip_data = raw_buffer[20:len(raw_buffer)]
-                print (f"Proxy-listener-target: received data from listener UDP socket {ip_header.src_address} -> {ip_header.dst_address} checksum={ip_header.checksum}")
-                
-                # new_ip_header_no_checksum = build_ip_header(localhost, proxy_ip, ip_header, 0)
-                # header_checksum = ip_checksum(new_ip_header_no_checksum, len(new_ip_header_no_checksum))
-                # new_ip_header_with_checksum = build_ip_header(localhost, proxy_ip, ip_header, header_checksum)
-
-                # print (f"sending data to raw socket with target ip {target_ip} with listener {listener_ip} and new checksum = {header_checksum}")
-                # packet = new_ip_header_with_checksum + ip_data
+                print (f"Proxy-listener-target: received data from listener UDP socket {ip_header.src_address} -> {ip_header.dst_address} checksum={ip_header.checksum}")                
 
                 packet = build_new_packet(raw_packet_bytes, localhost, localhost, 1)
 
@@ -423,14 +335,8 @@ def start_gateway_node(config: dict):
 
         exit_nodes.append(exit_node)
 
-
-
-    #exit_addr = NetworkAddress(exit_ip, exit_port)
-
     listen_udp_listener_thread = threading.Thread(target=run_udp_listen_to_udp_send, args=(udp_listen_socket, exit_nodes))
-
     listen_udp_listener_thread.start()
-
     print ("Gateway started, running.")
 
 
@@ -526,37 +432,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-    # test_string = b"\x45\x00\x00\x3c\x7f\xdd\x40\x00\x40\x06\xbc\xdc\x7f\x00\x00\x01\x7f\x00\x00\x01\x92\x88\x00\x01\x4a\xc7\x82\xf7\x00\x00\x00\x00\xa0\x02\xff\xd7\xfe\x30\x00\x00\x02\x04\xff\xd7\x04\x02\x08\x0a\x12\x6a\xc1\x07\x00\x00\x00\x00\x01\x03\x03\x07"
-
-    # original_header = test_string[0:20]
-
-    # copy_header = bytearray(len(original_header))
-    # copy_header[:] = original_header
-
-    # # zero out checksum
-    # copy_header[10] = 0 
-    # copy_header[11] = 0 
-
-    # checksum = ip_checksum(copy_header, len(copy_header))
-    # checksum_bytes = checksum.to_bytes(2, 'big')
-    # copy_header[10] = checksum_bytes[0]
-    # copy_header[11] = checksum_bytes[1]
-
-    # print (''.join(format(x, '02x') for x in copy_header))
-
-
-
-    # # print (test_string)
-    # # print (len(test_string))
-    # # print (test_string[1])
-
-    # new_header = replace_ip_addresses(original_header, '127.0.0.1', '127.0.0.100')
-
-    # ip_header = IPHeader(new_header)
-    # print (ip_header.src_address)
-
-    # print (len(new_header))
-    # print (new_header)
-
-    # print (''.join(format(x, '02x') for x in new_header))
