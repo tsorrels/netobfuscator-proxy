@@ -146,7 +146,7 @@ def run_udp_to_tcp_target_raw(listen_udp_socket: socket.socket, send_tcp_raw_soc
 
 
 
-def run_tcp_raw_to_udp_gateway(listen_tcp_raw_socket: socket.socket, udp_gateway_send_socket: socket.socket, gateway_addr: NetworkAddress):
+def run_tcp_raw_to_udp_gateway(listen_tcp_raw_socket: socket.socket, udp_nodes): # udp_gateway_send_socket: socket.socket, gateway_addr: NetworkAddress):
     global SHUTDOWN
 
     print ("Running run_tcp_raw_to_udp_gateway")
@@ -162,15 +162,26 @@ def run_tcp_raw_to_udp_gateway(listen_tcp_raw_socket: socket.socket, udp_gateway
                 raw_bytes = bytearray(len(raw_buffer))
                 raw_bytes[:] = raw_buffer
 
+
                 scapy_packet = IP(raw_bytes)
-                scapy_packet.show2()
+                
+
+                ################################################################
+                if (scapy_packet.src != '20.33.76.54'):
+                    print ("ALERT: packet not from target, droppping packet.")
+                    continue
 
                 if (scapy_packet.ttl == 1):
                     print ("ALERT: ttl packet equals 1, droppping packet.")
                     continue
 
-                print (f"Proxy-listener-client: writing ip packet to gateway {gateway_addr.ip}")
-                udp_gateway_send_socket.sendto(raw_bytes,(gateway_addr.ip, gateway_addr.port))
+                scapy_packet.show2()
+
+                node = choose_node(udp_nodes)
+
+                print (f"Proxy-listener-client: writing ip packet to gateway {node.ip}")                
+
+                node.socket.sendto(raw_bytes,(node.ip, node.port))
 
             if (SHUTDOWN):
                 print ("shutting down run_tcp_raw_to_udp_gateway")
@@ -257,10 +268,11 @@ def start_proxy(config: dict):
 
     # create udp send socket to gateway node
     udp_gateway_send_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
     gateway_addr = NetworkAddress(config['gateway']['ip'], config['gateway']['port'])
 
-    listen_tcp_raw_socket_thread = threading.Thread(target=run_tcp_raw_to_udp_gateway, args=(listen_tcp_raw_socket, udp_gateway_send_socket, gateway_addr))
+    gateway_node = ExitNode(udp_gateway_send_socket, gateway_addr.ip, gateway_addr.port)
+
+    listen_tcp_raw_socket_thread = threading.Thread(target=run_tcp_raw_to_udp_gateway, args=(listen_tcp_raw_socket, [gateway_node]))
     listen_tcp_raw_socket_thread.start()
     
     # create udp receive socket to receive from receiver node
@@ -283,7 +295,7 @@ def start_proxy(config: dict):
 def start_gateway_node(config: dict):
     print ("starting gateway node")
 
-    exit_nodes = []
+    intermediate_nodes = []
 
     # create udp receive socket to receive from gateway or intermediate nodes
     udp_listen_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -292,25 +304,138 @@ def start_gateway_node(config: dict):
     # TODO: update to send to intermediate and/or exit nodes
     # create udp send socket to exit node
 
-    exit_node_definitions = config['exit']
+    intermediate_node_definitions = config['intermediate']
 
-    for definition in exit_node_definitions:
+    for definition in intermediate_node_definitions:
 
         udp_send_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        exit_ip = definition['ip']
-        exit_port = definition['port']
+        intermediate_ip = definition['ip']
+        intermediate_port = definition['port']
 
-        exit_node = ExitNode(udp_send_socket, exit_ip, exit_port)
+        intermediate_node = ExitNode(udp_send_socket, intermediate_ip, intermediate_port)
 
-        exit_nodes.append(exit_node)
+        intermediate_nodes.append(intermediate_node)
 
-    listen_udp_listener_thread = threading.Thread(target=run_udp_listen_to_udp_send, args=(udp_listen_socket, exit_nodes))
+    listen_udp_listener_thread = threading.Thread(target=run_udp_listen_to_udp_send, args=(udp_listen_socket, intermediate_nodes))
     listen_udp_listener_thread.start()
     print ("Gateway started, running.")
 
 
-def start_intermediate_node(config: dict):
-    print ("starting intermediate node")
+
+def start_return_node(config: dict, node_index:int):
+    print ("starting return node")
+
+    return_node_definition = config['return'][node_index]
+    return_ip = return_node_definition['ip']
+    return_port = return_node_definition['port']
+
+    # create udp receive socket to receive from gateway or intermediate nodes
+    udp_listen_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp_listen_socket.bind(('0.0.0.0', return_port))
+
+
+    # create udp send socket back to proxy
+    proxy_node_definition = config['proxy']
+    proxy_ip = proxy_node_definition['ip']
+    proxy_port = proxy_node_definition['port']
+
+    udp_send_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    proxy_node = ExitNode(udp_send_socket, proxy_ip, proxy_port)
+
+    listen_udp_listener_thread = threading.Thread(target=run_udp_listen_to_udp_send, args=(udp_listen_socket, [proxy_node]))
+    listen_udp_listener_thread.start()
+    print ("Return node started, running.")
+
+def start_intermediate_node(config: dict, node_index:int):
+    print ("starting gateway node")
+
+    intermediate_node_definition = config['intermediate'][node_index]
+    intermediate_ip = intermediate_node_definition['ip']
+    intermediate_port = intermediate_node_definition['port']
+
+    # create udp receive socket to receive from gateway or intermediate nodes
+    udp_listen_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp_listen_socket.bind(('0.0.0.0', intermediate_port))
+
+    # if using decoy
+    decoy = config['decoy']
+
+    if decoy:
+        udp_send_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        decoy_ip = decoy['ip']
+        decoy_port = decoy['port']
+        decoy_node = ExitNode(udp_send_socket, decoy_ip, decoy_port)
+        listen_udp_listener_thread = threading.Thread(target=run_udp_listen_to_udp_send, args=(udp_listen_socket, [ decoy_node] ))
+        listen_udp_listener_thread.start()
+
+    # intermediate_nodes = []
+
+    # # create udp receive socket to receive from gateway or intermediate nodes
+    # udp_listen_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # udp_listen_socket.bind(('0.0.0.0', config['gateway']['port']))
+
+    # # TODO: update to send to intermediate and/or exit nodes
+    # # create udp send socket to exit node
+
+    # intermediate_node_definitions = config['exit']
+
+    # for definition in intermediate_node_definitions:
+
+    #     udp_send_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    #     intermediate_ip = definition['ip']
+    #     intermediate_port = definition['port']
+
+    #     intermediate_node = ExitNode(udp_send_socket, intermediate_ip, intermediate_port)
+
+    #     intermediate_nodes.append(intermediate_node)
+
+    # listen_udp_listener_thread = threading.Thread(target=run_udp_listen_to_udp_send, args=(udp_listen_socket, intermediate_nodes))
+    # listen_udp_listener_thread.start()
+    # print ("Gateway started, running.")
+    # print ("starting intermediate node")
+
+def start_decoy(config: dict):
+    print ("starting decoy node")
+
+    decoy_node_definition = config['decoy']
+
+    #udp_send_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    decoy_ip = decoy_node_definition['ip']
+    decoy_port = decoy_node_definition['port']
+
+    # create udp receive socket to receive from gateway or intermediate nodes
+    udp_listen_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    udp_listen_socket.bind(('0.0.0.0', decoy_port))
+
+    # create raw sending socket
+    send_tcp_raw_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+    send_tcp_raw_socket.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
+
+    net_udp_to_target_raw_socket_thread = threading.Thread(target=run_udp_to_tcp_target_raw, args=(udp_listen_socket, send_tcp_raw_socket, config['decoy']['ip'], config['target']['ip']))
+    net_udp_to_target_raw_socket_thread.start()
+
+    return_node_definitions = config['return']
+
+    return_nodes = []
+
+    for definition in return_node_definitions:
+
+        udp_send_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        return_ip = definition['ip']
+        return_port = definition['port']
+
+        return_node = ExitNode(udp_send_socket, return_ip, return_port)
+
+        return_nodes.append(return_node)
+
+    # create raw listening socket(s)
+    listen_tcp_raw_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+    listen_tcp_raw_socket.bind(('0.0.0.0', 0))
+    listen_tcp_raw_socket.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
+
+
+    listen_tcp_raw_socket_thread = threading.Thread(target=run_tcp_raw_to_udp_gateway, args=(listen_tcp_raw_socket, return_nodes))
+    listen_tcp_raw_socket_thread.start()     
 
 def start_exit_node(config: dict, node_index: int):
     print ("starting exit node")
@@ -380,6 +505,17 @@ def main():
 
     elif sys.argv[1] == 'listener':
         start_listener(config)
+
+    elif sys.argv[1] == 'decoy':
+        start_decoy(config)        
+
+    if sys.argv[1] == 'return':
+        node_index = int(sys.argv[2])
+        start_return_node(config, node_index) 
+
+    if sys.argv[1] == 'intermediate':
+        node_index = int(sys.argv[2])
+        start_intermediate_node(config, node_index) 
 
     if sys.argv[1] == 'exit':
         node_index = int(sys.argv[2])
